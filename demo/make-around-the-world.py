@@ -287,8 +287,7 @@ if RECORDING:
     # Sung note: the recording called "around", pitched to the note.
     t.define("sing", 3100, 1420, [
         loud(1.2),
-        sp("playRecording", SOUND=menu("sounds", "around"), NOTE=note_arg(t.arg("note"))),
-        sp("sleepBeats", BEATS=t.arg("beats")),
+        sp("playRecordingFor", SOUND=menu("sounds", "around"), NOTE=note_arg(t.arg("note")), BEATS=t.arg("beats")),
     ], args=("note", "beats", "vowel"))
 else:
     # Sung note (MIDI numbers): the vowel filter changes shape per syllable; quiet octave on top.
@@ -363,7 +362,7 @@ t.define("bass", 1300, 40, [
 VOX = [(59, 0.5), (55, 1), (55, 0.5), (54, 0.5), (55, 1), (57, 0.5), (57, 0.5), (55, 1), (54, 1), (55, 1), (59, 0.5)]
 VOWELS = [1, 5, 2, 4]
 t.define("voice", 1300, 900, [
-    fx("reverb"), fx_opt("room", 0.5), fx_opt("mix", 0.2),
+    fx("reverb"), fx_opt("room", 0.5), fx_opt("mix", 0.12 if RECORDING else 0.2),
     also_fx("hpf"), fx_opt("cutoff", 68),
     *([] if RECORDING else [also_fx("vowel"), fx_opt("voice", 3), fx_opt("mix", 0.85)]),
     live_loop("voice", [sing(n, d, VOWELS[i % 4]) for i, (n, d) in enumerate(VOX)], sync="bass"),

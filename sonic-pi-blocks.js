@@ -128,6 +128,8 @@
             arguments: { BEATS: n(1) } },
           { opcode: "playRecording", blockType: Scratch.BlockType.COMMAND, text: "play recording [SOUND] at note [NOTE]",
             arguments: { SOUND: menu("sounds"), NOTE: { type: Scratch.ArgumentType.NOTE, defaultValue: 60 } } },
+          { opcode: "playRecordingFor", blockType: Scratch.BlockType.COMMAND, text: "play recording [SOUND] at note [NOTE] for [BEATS] beats",
+            arguments: { SOUND: menu("sounds"), NOTE: { type: Scratch.ArgumentType.NOTE, defaultValue: 60 }, BEATS: n(1) } },
           { opcode: "micStart", blockType: Scratch.BlockType.COMMAND, text: "start microphone (through the effects)" },
           { opcode: "micStop", blockType: Scratch.BlockType.COMMAND, text: "stop microphone" },
           "---",
@@ -318,14 +320,26 @@
       return this.uploads[md5];
     }
     playRecording({ SOUND, NOTE }, util) {
+      return this._playRecording(SOUND, NOTE, null, util);
+    }
+    // Held for the note length and faded out, so notes don't pile up on each other.
+    playRecordingFor({ SOUND, NOTE, BEATS }, util) {
+      return this._playRecording(SOUND, NOTE, num(BEATS, 1), util);
+    }
+    _playRecording(SOUND, NOTE, beats, util) {
       const snd = this._findSound(String(SOUND), util);
       if (!snd) return;
       const semis = toMidi(NOTE) - 60;   // 60 plays the recording as it was made
       const rec = this._rec(util);
       return this._uploadSound(snd).then((path) => {
-        const line = `sample ${JSON.stringify(path)}, amp: ${this.amp}${semis ? `, rpitch: ${semis}` : ""}`;
+        let line = `sample ${JSON.stringify(path)}, amp: ${this.amp}${semis ? `, rpitch: ${semis}` : ""}`;
+        if (beats !== null) line += `, attack: 0.01, sustain: ${Math.max(0.05, beats * 0.85)}, release: 0.08`;
         // Recording finished while we waited? Then the loop has already been sent; play it now.
-        return this._sound([line], rec && util.thread.spLoop === rec ? util : null);
+        const inLoop = rec && util.thread.spLoop === rec;
+        const p = this._sound([line], inLoop ? util : null);
+        if (beats === null) return p;
+        if (inLoop) { this._stmt(`sleep ${beats}`, util); return p; }
+        return p.then(() => this._wait(beats));
       }).catch((e) => { this.status.lastError = e.message; });
     }
     micStart(_, util) {

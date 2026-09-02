@@ -38,7 +38,7 @@ fi
 say "Installing Sonic Scratch into $DEST"
 mkdir -p "$DEST"
 if [ -n "${SONIC_SCRATCH_SRC:-}" ]; then
-  cp -R "$SONIC_SCRATCH_SRC"/. "$DEST"/
+  (cd "$SONIC_SCRATCH_SRC" && tar --exclude .git --exclude __pycache__ -cf - .) | tar -xf - -C "$DEST"
 else
   curl -fsSL "https://github.com/$REPO/archive/refs/heads/$REF.tar.gz" | tar -xz --strip-components=1 -C "$DEST"
 fi
