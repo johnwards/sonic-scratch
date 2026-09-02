@@ -140,16 +140,21 @@ stage = Target("Stage")
 stage.is_stage = True
 for name, light in [("magenta", "#ff2fa8"), ("cyan", "#2fd8ff"), ("gold", "#ffd23f")]:
     stage.costume(name, backdrop(light), 240, 180)
+WORDS = ["a", "round", "the", "world"]
 if RECORDING:
-    # A stand-in "around" sound so the project works before anyone records one.
+    # Stand-in sounds for the four words, so the project works before anyone records them.
     import math, struct
-    sr = 44100; frames = bytearray()
-    for i in range(int(0.5 * sr)):
-        tt = i / sr; env = min(1, tt * 60) * min(1, (0.5 - tt) * 8)
-        v = 0.5 * env * (math.sin(2 * math.pi * 196 * tt) + 0.4 * math.sin(2 * math.pi * 392 * tt) * (1 + math.sin(2 * math.pi * 7 * tt)) / 2)
-        frames += struct.pack("<h", int(v * 32767))
-    stage.sound("around", b"RIFF" + struct.pack("<I", 36 + len(frames)) + b"WAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 1, sr, sr * 2, 2, 16) + b"data" + struct.pack("<I", len(frames)) + bytes(frames))
-words = stage.list("words", ["A", "ROUND", "THE", "WORLD"])
+    for word, hz in zip(WORDS, (220, 196, 247, 175)):
+        sr = 44100; frames = bytearray()
+        for i in range(int(0.35 * sr)):
+            tt = i / sr; env = min(1, tt * 80) * min(1, (0.35 - tt) * 10)
+            v = 0.5 * env * (math.sin(2 * math.pi * hz * tt) + 0.4 * math.sin(2 * math.pi * hz * 2 * tt) * (1 + math.sin(2 * math.pi * 9 * tt)) / 2)
+            frames += struct.pack("<h", int(v * 32767))
+        stage.sound(word, b"RIFF" + struct.pack("<I", 36 + len(frames)) + b"WAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 1, sr, sr * 2, 2, 16) + b"data" + struct.pack("<I", len(frames)) + bytes(frames))
+# The lyric, one word per note of the two-bar chant (11 notes), so the robots' speech bubbles
+# and the sung words stay in step however long it loops.
+LYRIC = [WORDS[i % 4] for i in range(11)]
+words = stage.list("words", [w.upper() for w in LYRIC])
 syllable = stage.var("syllable", 0)
 PARTS = ["drums", "lead", "bass", "voice", "chords"]
 LOOPS = {"drums": ["kick", "hats"], "lead": ["lead"], "bass": ["bass"], "voice": ["voice"], "chords": ["chords"]}
@@ -284,11 +289,12 @@ t.define("lead note", 3100, 960, [
 ], args=("note", "beats"))
 
 if RECORDING:
-    # Sung note: the recording called "around", pitched to the note.
+    # Sung note: the recording of that word, pitched to the note and held for its length.
+    word_slot = [3, t.arg("word")[1], menu("sounds", "a")[1]]
     t.define("sing", 3100, 1420, [
         loud(1.2),
-        sp("playRecordingFor", SOUND=menu("sounds", "around"), NOTE=note_arg(t.arg("note")), BEATS=t.arg("beats")),
-    ], args=("note", "beats", "vowel"))
+        sp("playRecordingFor", SOUND=word_slot, NOTE=note_arg(t.arg("note")), BEATS=t.arg("beats")),
+    ], args=("note", "beats", "word"))
 else:
     # Sung note (MIDI numbers): the vowel filter changes shape per syllable; quiet octave on top.
     t.define("sing", 3100, 1420, [
@@ -316,8 +322,10 @@ def chord_note(midi, beats):
     return t.call("chord note", num(midi), num(beats))
 
 
-def sing(midi, beats, vowel):
-    return t.call("sing", num(midi), num(beats), num(vowel))
+def sing(midi, beats, i):
+    if RECORDING:
+        return t.call("sing", num(midi), num(beats), txt(LYRIC[i]))
+    return t.call("sing", num(midi), num(beats), num(VOWELS[i % 4]))
 
 
 t.define("drums", 700, 40, [
@@ -365,7 +373,7 @@ t.define("voice", 1300, 900, [
     fx("reverb"), fx_opt("room", 0.5), fx_opt("mix", 0.12 if RECORDING else 0.2),
     also_fx("hpf"), fx_opt("cutoff", 68),
     *([] if RECORDING else [also_fx("vowel"), fx_opt("voice", 3), fx_opt("mix", 0.85)]),
-    live_loop("voice", [sing(n, d, VOWELS[i % 4]) for i, (n, d) in enumerate(VOX)], sync="bass"),
+    live_loop("voice", [sing(n, d, i) for i, (n, d) in enumerate(VOX)], sync="bass"),
     part_done("voice"),
 ])
 
@@ -419,9 +427,10 @@ for i, (k, name) in enumerate(zip("12345", PARTS)):
     ])
 
 if RECORDING:
-    t.comment(40, -420, "THIS VERSION SINGS A RECORDING. Click the Stage, open the Sounds tab, press Record and say\n"
-              "'around the world'. Name the new sound 'around' and delete the old 'around' (a stand-in beep).\n"
-              "The 'sing' custom block on the right plays it, pitched to each note of the tune.", width=700, height=90)
+    t.comment(40, -420, "THIS VERSION SINGS RECORDINGS. Click the Stage, open the Sounds tab, and record four short\n"
+              "sounds: say 'a', 'round', 'the', 'world', one per recording, short and punchy. Name them a, round,\n"
+              "the, world, and delete the four stand-in beeps with those names. Trim silence off the start.\n"
+              "The 'sing' custom block on the right plays the right word for each note, pitched to the tune.", width=720, height=110)
 t.comment(40, -260, "AROUND THE WORLD, built entirely from blocks. Start Sonic Scratch first, then press the green flag.\n"
           "Each part of the song is a custom block on the right. Inside each one, a 'live loop' block\n"
           "holds the notes; Sonic Pi keeps it repeating in perfect time. The parts come in one at a time\n"
@@ -442,14 +451,14 @@ def robot_sprite(name, helmet, x, first_half):
         r.block("looks_say", {"MESSAGE": txt("")}),
     ])
     r.script(40, 300, [r.block("sonicpi_whenLoopRepeats", {"NAME": txt("kick")}), r.block("looks_nextcostume")])
-    # Take turns singing: four syllables each, using the shared syllable counter to pick the word.
+    # Take turns singing, one two-bar phrase (11 words) each, reading the word from the lyric list.
     n_minus_1 = lambda: r.reporter("operator_subtract", {"NUM1": var_input(syllable), "NUM2": num(1)})
     my_turn = r.boolean("operator_lt", {
-        "OPERAND1": r.reporter("operator_mod", {"NUM1": n_minus_1(), "NUM2": num(8)}), "OPERAND2": txt(4)})
+        "OPERAND1": r.reporter("operator_mod", {"NUM1": n_minus_1(), "NUM2": num(22)}), "OPERAND2": txt(11)})
     if not first_half:
         my_turn = r.boolean("operator_not", {"OPERAND": my_turn})
     word = r.reporter("data_itemoflist", {"INDEX": r.reporter("operator_add", {
-        "NUM1": r.reporter("operator_mod", {"NUM1": n_minus_1(), "NUM2": num(4)}), "NUM2": num(1)})},
+        "NUM1": r.reporter("operator_mod", {"NUM1": n_minus_1(), "NUM2": num(11)}), "NUM2": num(1)})},
         {"LIST": list(words)}, shadow=(7, "1"))
     r.script(40, 460, [
         r.block("sonicpi_whenLoopSound", {"NAME": txt("voice")}),
