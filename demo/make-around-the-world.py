@@ -6,11 +6,15 @@ all animated by beat cues coming back from Sonic Pi.
 Run: python3 demo/make-around-the-world.py
 """
 import os
+import sys
 from sb3lib import Target, num, posnum, whole, txt, var_input, write_sb3
 
 EXT = "sonicpi"
 EXT_URL = "http://localhost:8000/sonic-pi-blocks.js"
-OUT = os.path.join(os.path.dirname(__file__), "around-the-world.sb3")
+# `--recording` builds the version where the voice is a recording called "around" on the
+# Stage (record your own in the Stage's Sounds tab and name it "around").
+RECORDING = "--recording" in sys.argv
+OUT = os.path.join(os.path.dirname(__file__), "around-the-world-recording.sb3" if RECORDING else "around-the-world.sb3")
 
 # ============================================================ the art
 SKIN = "#f1c27d"
@@ -136,6 +140,15 @@ stage = Target("Stage")
 stage.is_stage = True
 for name, light in [("magenta", "#ff2fa8"), ("cyan", "#2fd8ff"), ("gold", "#ffd23f")]:
     stage.costume(name, backdrop(light), 240, 180)
+if RECORDING:
+    # A stand-in "around" sound so the project works before anyone records one.
+    import math, struct
+    sr = 44100; frames = bytearray()
+    for i in range(int(0.5 * sr)):
+        tt = i / sr; env = min(1, tt * 60) * min(1, (0.5 - tt) * 8)
+        v = 0.5 * env * (math.sin(2 * math.pi * 196 * tt) + 0.4 * math.sin(2 * math.pi * 392 * tt) * (1 + math.sin(2 * math.pi * 7 * tt)) / 2)
+        frames += struct.pack("<h", int(v * 32767))
+    stage.sound("around", b"RIFF" + struct.pack("<I", 36 + len(frames)) + b"WAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 1, sr, sr * 2, 2, 16) + b"data" + struct.pack("<I", len(frames)) + bytes(frames))
 words = stage.list("words", ["A", "ROUND", "THE", "WORLD"])
 syllable = stage.var("syllable", 0)
 PARTS = ["drums", "lead", "bass", "voice", "chords"]
@@ -270,14 +283,22 @@ t.define("lead note", 3100, 960, [
     sp("playNoteFor", NOTE=note_arg(t.arg("note")), BEATS=t.arg("beats")),
 ], args=("note", "beats"))
 
-# Sung note (MIDI numbers): the vowel filter changes shape per syllable; quiet octave on top.
-t.define("sing", 3100, 1420, [
-    fx_opt("vowel_sound", t.arg("vowel")),
-    synth("dsaw"), sound_opt("detune", 0.15), sound_opt("release", times(t.arg("beats"), 0.9)), loud(0.28),
-    sp("playNote", NOTE=note_arg(t.arg("note"))),
-    loud(0.15),
-    sp("playNoteFor", NOTE=note_arg(plus(t.arg("note"), 12)), BEATS=t.arg("beats")),
-], args=("note", "beats", "vowel"))
+if RECORDING:
+    # Sung note: the recording called "around", pitched to the note.
+    t.define("sing", 3100, 1420, [
+        loud(1.2),
+        sp("playRecording", SOUND=menu("sounds", "around"), NOTE=note_arg(t.arg("note"))),
+        sp("sleepBeats", BEATS=t.arg("beats")),
+    ], args=("note", "beats", "vowel"))
+else:
+    # Sung note (MIDI numbers): the vowel filter changes shape per syllable; quiet octave on top.
+    t.define("sing", 3100, 1420, [
+        fx_opt("vowel_sound", t.arg("vowel")),
+        synth("dsaw"), sound_opt("detune", 0.15), sound_opt("release", times(t.arg("beats"), 0.9)), loud(0.28),
+        sp("playNote", NOTE=note_arg(t.arg("note"))),
+        loud(0.15),
+        sp("playNoteFor", NOTE=note_arg(plus(t.arg("note"), 12)), BEATS=t.arg("beats")),
+    ], args=("note", "beats", "vowel"))
 
 
 # ============================================================ the parts
@@ -344,7 +365,7 @@ VOWELS = [1, 5, 2, 4]
 t.define("voice", 1300, 900, [
     fx("reverb"), fx_opt("room", 0.5), fx_opt("mix", 0.2),
     also_fx("hpf"), fx_opt("cutoff", 68),
-    also_fx("vowel"), fx_opt("voice", 3), fx_opt("mix", 0.85),
+    *([] if RECORDING else [also_fx("vowel"), fx_opt("voice", 3), fx_opt("mix", 0.85)]),
     live_loop("voice", [sing(n, d, VOWELS[i % 4]) for i, (n, d) in enumerate(VOX)], sync="bass"),
     part_done("voice"),
 ])
@@ -398,6 +419,10 @@ for i, (k, name) in enumerate(zip("12345", PARTS)):
         }),
     ])
 
+if RECORDING:
+    t.comment(40, -420, "THIS VERSION SINGS A RECORDING. Click the Stage, open the Sounds tab, press Record and say\n"
+              "'around the world'. Name the new sound 'around' and delete the old 'around' (a stand-in beep).\n"
+              "The 'sing' custom block on the right plays it, pitched to each note of the tune.", width=700, height=90)
 t.comment(40, -260, "AROUND THE WORLD, built entirely from blocks. Start Sonic Scratch first, then press the green flag.\n"
           "Each part of the song is a custom block on the right. Inside each one, a 'live loop' block\n"
           "holds the notes; Sonic Pi keeps it repeating in perfect time. The parts come in one at a time\n"

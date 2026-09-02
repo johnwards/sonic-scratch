@@ -33,6 +33,9 @@ In the `demo` folder of the install (`~/Library/Application Support/Sonic Scratc
 
 - `around-the-world.sb3`: Daft Punk, Around the World. Robots on the pyramid, the dancers from
   the video. Parts come in one at a time. Keys 1-5 toggle drums, lead, bass, voice, chords. Space stops.
+- `around-the-world-recording.sb3`: the same, but the voice is a recording. Click the Stage,
+  open its Sounds tab, record "around the world", name the sound `around` and delete the
+  stand-in `around` beep. The tune then sings the recording, pitched to each note.
 - `mario.sb3`: Super Mario Bros overworld theme on square-wave synths, NES sprites on a World 1-1
   backdrop. Keys 1-4 toggle drums, bass, melody, harmony. Sprite source: `demo/mario-sprites/SOURCE.md`.
 - `happy.sb3`: Pharrell Williams, Happy, with minion-style dancers. Keys 1-5 toggle drums, claps,
