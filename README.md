@@ -41,7 +41,9 @@ In the `demo` folder of the install (`~/Library/Application Support/Sonic Scratc
   pitch from mouse height with the up arrow held.
 
 All four are built from blocks only, no raw code. Each song part is a Scratch custom block
-containing a live loop, and the animation is driven by cues from the loops.
+containing a live loop, and the animation is driven by cues from the loops. In Around the World
+each instrument is also a custom block with arguments (`bass note (a1) (1)`) that layers two
+synths, which is most of what makes it sound like a record rather than a toy.
 
 ## Blocks
 
@@ -57,8 +59,9 @@ Settings, applied to later sounds:
 
 - `use synth [beep]`
 - `set sound option [cutoff] to [95]`: cutoff, res, attack, release, sustain, amp, pan, detune, depth. `clear sound options` resets.
-- `use effect [reverb]`, `none` to turn off
-- `set effect option [room] to [0.5]`: mix, room, phase, decay, vowel_sound, voice, etc.
+- `set sample option [rate] to [1.2]`: rate, lpf, hpf, start, finish, pan, attack, release. `clear sample options` resets.
+- `use effect [reverb]`, `none` to turn off. `also use effect [slicer]` adds another effect inside it.
+- `set effect option [room] to [0.5]`: applies to the last effect chosen. mix, room, phase, decay, vowel_sound, voice, threshold, etc.
 - `set tempo to [120] bpm`
 - `set loudness to [1]`
 

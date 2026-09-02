@@ -161,12 +161,20 @@ def fx(name):
     return sp("useFx", FX=menu("fx", name))
 
 
+def also_fx(name):
+    return sp("addFx", FX=menu("fx", name))
+
+
 def sound_opt(name, value):
-    return sp("setSoundOpt", OPT=menu("soundopts", name), VALUE=num(value))
+    return sp("setSoundOpt", OPT=menu("soundopts", name), VALUE=value if isinstance(value, list) else num(value))
 
 
 def fx_opt(name, value):
-    return sp("setFxOpt", OPT=menu("fxopts", name), VALUE=num(value))
+    return sp("setFxOpt", OPT=menu("fxopts", name), VALUE=value if isinstance(value, list) else num(value))
+
+
+def sample_opt(name, value):
+    return sp("setSampleOpt", OPT=menu("sampleopts", name), VALUE=num(value))
 
 
 def loud(v):
@@ -175,10 +183,6 @@ def loud(v):
 
 def sample(name):
     return sp("playSample", SAMPLE=menu("samples", name))
-
-
-def note_for(n, beats):
-    return sp("playNoteFor", NOTE=t.note(n), BEATS=num(beats))
 
 
 def rest(beats):
@@ -195,68 +199,154 @@ def part_done(name):
     return t.block("data_setvariableto", {"VALUE": txt(1)}, {"VARIABLE": list(part_on[name])})
 
 
-# --- drums: four-to-the-floor kick, hats on the off-beats, snare on 2 and 4 ---
+def times(a, b):
+    return t.reporter("operator_multiply", {"NUM1": a, "NUM2": num(b)})
+
+
+def minus(a, b):
+    return t.reporter("operator_subtract", {"NUM1": a, "NUM2": num(b)})
+
+
+def plus(a, b):
+    return t.reporter("operator_add", {"NUM1": a, "NUM2": num(b)})
+
+
+def note_arg(spec):
+    """An argument reporter dropped into a note slot (keeps a note shadow behind it)."""
+    return [3, spec[1], t.note(60)[1]]
+
+
+# ============================================================ the sounds
+# Each instrument is a custom block that layers two sounds. The layering and the
+# sample tweaks are what make it sound like a record rather than a toy.
+
+# Drums: a thumpy kick under a clicky one; bright hats; snare with a clap on top.
+t.define("kick hit", 2500, 40, [
+    loud(2.2), sp("clearSampleOpts"), sample_opt("lpf", 95), sample("bd_haus"),
+    loud(1.0), sp("clearSampleOpts"), sample_opt("rate", 0.9), sample_opt("hpf", 40), sample("bd_tek"),
+])
+t.define("hat hit", 2500, 400, [
+    loud(1.8), sp("clearSampleOpts"), sample_opt("rate", 1.4), sample_opt("hpf", 90), sample("drum_cymbal_closed"),
+])
+t.define("ghost hat", 2500, 640, [
+    loud(0.5), sp("clearSampleOpts"), sample_opt("rate", 1.4), sample_opt("hpf", 90), sample("drum_cymbal_closed"),
+])
+t.define("open hat hit", 2500, 880, [
+    loud(0.8), sp("clearSampleOpts"), sample_opt("rate", 1.25), sample_opt("finish", 0.2), sample_opt("hpf", 90), sample("drum_cymbal_open"),
+])
+t.define("clap hit", 2500, 1160, [
+    loud(1.4), sp("clearSampleOpts"), sample_opt("rate", 1.05), sample("drum_snare_soft"),
+    loud(1.6), sp("clearSampleOpts"), sample_opt("rate", 1.1), sample("perc_snap"),
+])
+
+# Bass note: a pure sine for weight plus a filtered saw for tone.
+t.define("bass note", 3100, 40, [
+    synth("sine"), sound_opt("attack", 0.005), sound_opt("release", times(t.arg("beats"), 0.85)), loud(1.6),
+    sp("playNote", NOTE=note_arg(t.arg("note"))),
+    synth("saw"), sound_opt("attack", 0.005), sound_opt("cutoff", 100), sound_opt("res", 0.25), loud(1.0),
+    sp("playNoteFor", NOTE=note_arg(t.arg("note")), BEATS=t.arg("beats")),
+], args=("note", "beats"))
+
+# Chord note (MIDI numbers): pluck, pluck an octave down, and a wide prophet pad on top.
+t.define("chord note", 3100, 500, [
+    synth("pluck"), loud(2.8), sp("playNote", NOTE=note_arg(t.arg("note"))),
+    synth("prophet"), sound_opt("cutoff", 126), sound_opt("detune", 0.25), sound_opt("release", times(t.arg("beats"), 0.9)), loud(0.9),
+    sp("playNote", NOTE=note_arg(t.arg("note"))),
+    synth("pluck"), loud(1.0),
+    sp("playNoteFor", NOTE=note_arg(minus(t.arg("note"), 12)), BEATS=t.arg("beats")),
+], args=("note", "beats"))
+
+# Lead note: blade plus a detuned dsaw.
+t.define("lead note", 3100, 960, [
+    synth("blade"), sound_opt("cutoff", 130), sound_opt("release", times(t.arg("beats"), 0.9)), loud(1.1),
+    sp("playNote", NOTE=note_arg(t.arg("note"))),
+    synth("dsaw"), sound_opt("cutoff", 126), sound_opt("detune", 0.2), loud(0.55),
+    sp("playNoteFor", NOTE=note_arg(t.arg("note")), BEATS=t.arg("beats")),
+], args=("note", "beats"))
+
+# Sung note (MIDI numbers): the vowel filter changes shape per syllable; quiet octave on top.
+t.define("sing", 3100, 1420, [
+    fx_opt("vowel_sound", t.arg("vowel")),
+    synth("dsaw"), sound_opt("detune", 0.15), sound_opt("release", times(t.arg("beats"), 0.9)), loud(0.45),
+    sp("playNote", NOTE=note_arg(t.arg("note"))),
+    loud(0.15),
+    sp("playNoteFor", NOTE=note_arg(plus(t.arg("note"), 12)), BEATS=t.arg("beats")),
+], args=("note", "beats", "vowel"))
+
+
+# ============================================================ the parts
+def bass_note(n, beats):
+    return t.call("bass note", txt(n), num(beats))
+
+
+def lead_note(n, beats):
+    return t.call("lead note", txt(n), num(beats))
+
+
+def chord_note(midi, beats):
+    return t.call("chord note", num(midi), num(beats))
+
+
+def sing(midi, beats, vowel):
+    return t.call("sing", num(midi), num(beats), num(vowel))
+
+
 t.define("drums", 700, 40, [
-    fx("none"),
-    loud(1.6),
-    live_loop("kick", [sample("bd_haus"), rest(1)]),
-    live_loop("hats", [
+    fx("compressor"), fx_opt("threshold", 0.3), fx_opt("slope_above", 0.3),
+    live_loop("kick", [
         t.block("control_repeat", {"TIMES": whole(2), "SUBSTACK": t.substack([
-            rest(0.5), loud(0.45), sample("drum_cymbal_closed"),
-            rest(0.5), loud(0.7), sample("drum_snare_soft"),
-            rest(0.5), loud(0.45), sample("drum_cymbal_closed"),
-            rest(0.5),
+            t.call("kick hit"), t.call("ghost hat"), rest(0.5), t.call("hat hit"), rest(0.5),
+            t.call("kick hit"), rest(0.5), t.call("hat hit"), t.call("open hat hit"), rest(0.5),
         ])}),
-    ], sync="kick"),
+    ]),
+    fx("reverb"), fx_opt("room", 0.4), fx_opt("mix", 0.18),
+    live_loop("hats", [rest(1), t.call("clap hit"), rest(2), t.call("clap hit"), rest(1)], sync="kick"),
     part_done("drums"),
 ])
 
-# --- lead: the synth riff from the intro ---
 t.define("lead", 700, 700, [
-    synth("blade"), sound_opt("cutoff", 105), loud(0.55),
-    fx("reverb"), fx_opt("room", 0.5), fx_opt("mix", 0.25),
+    fx("reverb"), fx_opt("room", 0.6), fx_opt("mix", 0.25),
+    also_fx("ping_pong"), fx_opt("phase", 0.75), fx_opt("feedback", 0.3), fx_opt("mix", 0.25),
     live_loop("lead", [
-        note_for("e5", 0.5), note_for("d5", 0.5), note_for("b4", 0.5), note_for("a4", 0.5),
-        note_for("g4", 0.5), note_for("a4", 0.5), note_for("g4", 0.5), note_for("d4", 0.25), note_for("e4", 0.25),
+        lead_note("e5", 0.5), lead_note("d5", 0.5), lead_note("b4", 0.5), lead_note("a4", 0.5),
+        lead_note("g4", 0.5), lead_note("a4", 0.5), lead_note("g4", 0.5), lead_note("d4", 0.25), lead_note("e4", 0.25),
     ], sync="hats"),
     part_done("lead"),
 ])
 
-# --- bass: roots land a sixteenth early, rest, three more, two-note pickup; then the walk-down ---
+# Roots land a sixteenth early, rest, three more, two-note pickup; then the walk-down.
 t.define("bass", 1300, 40, [
-    synth("tb303"), sound_opt("cutoff", 95), sound_opt("res", 0.2), loud(1.3), fx("none"),
+    fx("compressor"), fx_opt("threshold", 0.35), fx_opt("slope_above", 0.4),
+    also_fx("lpf"), fx_opt("cutoff", 118),
     live_loop("bass", [
-        rest(1), note_for("a1", 1), note_for("a1", 1), note_for("a1", 0.5), note_for("b1", 0.25), note_for("c2", 0.25),
-        rest(1), note_for("c2", 1), note_for("c2", 1), note_for("c2", 0.5), note_for("d2", 0.25), note_for("e2", 0.25),
-        rest(1), note_for("e2", 1), note_for("e2", 1), note_for("e2", 1),
-        note_for("fs2", 0.5), note_for("e2", 0.5), note_for("d2", 0.5), note_for("c2", 0.5),
-        note_for("b1", 0.5), note_for("a1", 0.5), note_for("g1", 0.75), note_for("a1", 0.25),
+        rest(1), bass_note("a1", 1), bass_note("a1", 1), bass_note("a1", 0.5), bass_note("b1", 0.25), bass_note("c2", 0.25),
+        rest(1), bass_note("c2", 1), bass_note("c2", 1), bass_note("c2", 0.5), bass_note("d2", 0.25), bass_note("e2", 0.25),
+        rest(1), bass_note("e2", 1), bass_note("e2", 1), bass_note("e2", 1),
+        bass_note("fs2", 0.5), bass_note("e2", 0.5), bass_note("d2", 0.5), bass_note("c2", 0.5),
+        bass_note("b1", 0.5), bass_note("a1", 0.5), bass_note("g1", 0.75), bass_note("a1", 0.25),
     ], sync="hats"),
     part_done("bass"),
 ])
 
-# --- voice: the vocoder chant, through a vowel filter that changes shape on each syllable ---
-VOX = [("b3", 0.5), ("g3", 1), ("g3", 0.5), ("fs3", 0.5), ("g3", 1), ("a3", 0.5),
-       ("a3", 0.5), ("g3", 1), ("fs3", 1), ("g3", 1), ("b3", 0.5)]
+# The vocoder chant, two bars, through a vowel filter (b3=59 g3=55 fs3=54 a3=57).
+VOX = [(59, 0.5), (55, 1), (55, 0.5), (54, 0.5), (55, 1), (57, 0.5), (57, 0.5), (55, 1), (54, 1), (55, 1), (59, 0.5)]
 VOWELS = [1, 5, 2, 4]
-voice_body = [fx_opt("voice", 3), fx_opt("mix", 0.85)]
-for i, (n, d) in enumerate(VOX):
-    voice_body += [fx_opt("vowel_sound", VOWELS[i % 4]), note_for(n, d)]
 t.define("voice", 1300, 900, [
-    synth("dsaw"), sound_opt("detune", 0.15), loud(0.9), fx("vowel"),
-    live_loop("voice", voice_body, sync="bass"),
+    fx("reverb"), fx_opt("room", 0.5), fx_opt("mix", 0.2),
+    also_fx("hpf"), fx_opt("cutoff", 55),
+    also_fx("vowel"), fx_opt("voice", 3), fx_opt("mix", 0.85),
+    live_loop("voice", [sing(n, d, VOWELS[i % 4]) for i, (n, d) in enumerate(VOX)], sync="bass"),
     part_done("voice"),
 ])
 
-# --- chords: the plucked arpeggio, doubled an octave down ---
+# The plucked arpeggio (e5=76 g5=79 b4=71 d5=74 a5=81), pumped by a slicer so it breathes with the kick.
 chord_body = []
-for root, arp in [("e", ["e5", "g5", "b4", "d5"]), ("a", ["a5", "g5", "b4", "d5"])]:
-    for n, d in zip(arp, [0.75, 0.75, 0.5, 0.5]):
-        low = n[0] + str(int(n[1]) - 1)
-        chord_body += [sp("playNote", NOTE=t.note(n)), note_for(low, d)]
-    chord_body.append(rest(1.5))
+for arp in ([76, 79, 71, 74], [81, 79, 71, 74]):
+    chord_body += [chord_note(m, d) for m, d in zip(arp, [0.75, 0.75, 0.5, 0.5])] + [rest(1.5)]
 t.define("chords", 1900, 40, [
-    synth("pluck"), loud(0.6), fx("none"),
+    fx("reverb"), fx_opt("room", 0.75), fx_opt("mix", 0.3),
+    also_fx("slicer"), fx_opt("phase", 1), fx_opt("wave", 1), fx_opt("invert_wave", 1), fx_opt("pulse_width", 0.85), fx_opt("smooth", 0.03), fx_opt("mix", 0.75),
+    also_fx("hpf"), fx_opt("cutoff", 60),
     live_loop("chords", chord_body, sync="bass"),
     part_done("chords"),
 ])

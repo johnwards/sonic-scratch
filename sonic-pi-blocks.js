@@ -24,9 +24,10 @@
     "ambi_drone", "guit_e_fifths", "guit_em9", "bass_hit_c", "loop_amen",
     "loop_breakbeat", "loop_industrial", "loop_garzul", "misc_crow", "vinyl_scratch",
   ];
-  const FX = ["none", "reverb", "echo", "distortion", "wobble", "slicer", "bitcrusher", "flanger", "krush", "ixi_techno", "ping_pong", "vowel", "lpf", "hpf"];
+  const FX = ["none", "reverb", "echo", "distortion", "wobble", "slicer", "bitcrusher", "flanger", "krush", "ixi_techno", "ping_pong", "vowel", "lpf", "hpf", "compressor"];
+  const SAMPLE_OPTS = ["rate", "amp", "lpf", "hpf", "start", "finish", "pan", "attack", "release"];
   const SOUND_OPTS = ["cutoff", "res", "attack", "release", "sustain", "amp", "pan", "detune", "depth", "divisor"];
-  const FX_OPTS = ["mix", "room", "phase", "decay", "amp", "cutoff", "res", "vowel_sound", "voice", "depth", "probability", "feedback"];
+  const FX_OPTS = ["mix", "room", "phase", "decay", "amp", "cutoff", "res", "vowel_sound", "voice", "depth", "probability", "feedback", "wave", "invert_wave", "pulse_width", "smooth", "threshold", "slope_above"];
   const CHORDS = ["major", "minor", "major7", "minor7", "dom7", "dim", "aug", "sus2", "sus4", "m9", "add9", "5"];
   const SCALES = ["major", "minor", "major_pentatonic", "minor_pentatonic", "blues_major", "blues_minor", "dorian", "mixolydian", "chromatic"];
 
@@ -49,8 +50,8 @@
     constructor() {
       this.synth = "beep";
       this.synthOpts = {};
-      this.fx = "none";
-      this.fxOpts = {};
+      this.fx = [];          // active effects, outermost first: [{name, opts}]
+      this.sampleOpts = {};
       this.bpm = 60;
       this.amp = 1;
       this.status = { ready: false, lastMessage: "", lastError: "" };
@@ -129,7 +130,11 @@
           { opcode: "setSoundOpt", blockType: Scratch.BlockType.COMMAND, text: "set sound option [OPT] to [VALUE]",
             arguments: { OPT: menu("soundopts"), VALUE: n(100) } },
           { opcode: "clearSoundOpts", blockType: Scratch.BlockType.COMMAND, text: "clear sound options" },
+          { opcode: "setSampleOpt", blockType: Scratch.BlockType.COMMAND, text: "set sample option [OPT] to [VALUE]",
+            arguments: { OPT: menu("sampleopts"), VALUE: n(1) } },
+          { opcode: "clearSampleOpts", blockType: Scratch.BlockType.COMMAND, text: "clear sample options" },
           { opcode: "useFx", blockType: Scratch.BlockType.COMMAND, text: "use effect [FX]", arguments: { FX: menu("fx") } },
+          { opcode: "addFx", blockType: Scratch.BlockType.COMMAND, text: "also use effect [FX]", arguments: { FX: menu("fx") } },
           { opcode: "setFxOpt", blockType: Scratch.BlockType.COMMAND, text: "set effect option [OPT] to [VALUE]",
             arguments: { OPT: menu("fxopts"), VALUE: n(0.5) } },
           { opcode: "setBpm", blockType: Scratch.BlockType.COMMAND, text: "set tempo to [BPM] bpm", arguments: { BPM: n(60) } },
@@ -164,6 +169,7 @@
           samples: { acceptReporters: true, items: SAMPLES },
           fx: { acceptReporters: true, items: FX },
           soundopts: { acceptReporters: true, items: SOUND_OPTS },
+          sampleopts: { acceptReporters: true, items: SAMPLE_OPTS },
           fxopts: { acceptReporters: true, items: FX_OPTS },
           chords: { acceptReporters: true, items: CHORDS },
           scales: { acceptReporters: true, items: SCALES },
@@ -177,13 +183,17 @@
       if (Object.keys(this.synthOpts).length) lines.push(`use_synth_defaults ${opts(this.synthOpts)}`);
       return lines;
     }
-    _fxHead() {
-      const o = opts(this.fxOpts);
-      return `with_fx ${sym(this.fx)}${o ? ", " + o : ""} do`;
+    // The effect chain as a list of with_fx opening lines, outermost first.
+    _fxHeads() {
+      return this.fx.map((f) => {
+        const o = opts(f.opts);
+        return `with_fx ${sym(f.name)}${o ? ", " + o : ""} do`;
+      });
     }
     _wrapFx(lines) {
-      if (this.fx === "none") return lines;
-      return [this._fxHead(), ...lines.map((l) => "  " + l), "end"];
+      let out = lines;
+      for (const head of [...this._fxHeads()].reverse()) out = [head, ...out.map((l) => "  " + l), "end"];
+      return out;
     }
     // The live loop being recorded on this thread, if any.
     _rec(util) {
@@ -193,7 +203,7 @@
     _sound(lines, util) {
       const rec = this._rec(util);
       if (rec) {
-        const fx = this.fx === "none" ? "" : this._fxHead();
+        const fx = this._fxHeads();
         rec.lines.push({ fx, code: `cue ${sym(rec.name + "__sound")}` });
         for (const l of lines) rec.lines.push({ fx, code: l });
         return Promise.resolve();
@@ -204,7 +214,7 @@
     // (immediate-mode settings are re-sent with every sound).
     _stmt(line, util) {
       const rec = this._rec(util);
-      if (rec) rec.lines.push({ fx: "", code: line });
+      if (rec) rec.lines.push({ fx: this._fxHeads(), code: line });
     }
     _send(code) {
       return fetch(BRIDGE + "/run", {
@@ -219,16 +229,27 @@
     }
     _assemble(rec) {
       const head = rec.sync ? `live_loop ${rec.name}, sync: ${rec.sync} do` : `live_loop ${rec.name} do`;
-      const body = [];
-      // Consecutive lines under the same effect share one with_fx block.
-      let i = 0;
-      while (i < rec.lines.length) {
-        const fx = rec.lines[i].fx;
-        if (!fx) { body.push(rec.lines[i].code); i++; continue; }
-        const group = [];
-        while (i < rec.lines.length && rec.lines[i].fx === fx) { group.push(rec.lines[i].code); i++; }
-        body.push(fx, ...group.map((l) => "  " + l), "end");
-      }
+      // Every line carries the effect chain that was active. Nest with_fx blocks so a run of
+      // lines sharing the same outer effect sits inside one block, splitting only where the
+      // chain actually changes (e.g. a vowel setting that differs per note).
+      const nest = (lines, depth) => {
+        const out = [];
+        let i = 0;
+        while (i < lines.length) {
+          const fxAt = lines[i].fx[depth];
+          const run = [];
+          while (i < lines.length && lines[i].fx[depth] === fxAt) run.push(lines[i++]);
+          if (fxAt === undefined) out.push(...run.map((l) => l.code));
+          else out.push(fxAt, ...nest(run, depth + 1).map((l) => "  " + l), "end");
+        }
+        return out;
+      };
+      // A settings line immediately replaced by another is noise; keep the last.
+      const lines = rec.lines.filter((l, i) => {
+        const next = rec.lines[i + 1];
+        return !(l.code.startsWith("use_synth_defaults") && next && next.code.startsWith("use_synth_defaults") && JSON.stringify(next.fx) === JSON.stringify(l.fx));
+      });
+      const body = nest(lines, 0);
       if (!rec.lines.some((l) => /^sleep /.test(l.code))) body.push("sleep 1");
       return [head, ...body.map((l) => "  " + l), "end"].join("\n");
     }
@@ -247,7 +268,8 @@
       return this._sound([`play chord(${note(NOTE)}, ${sym(CHORD)}), amp: ${this.amp}`], util);
     }
     playSample({ SAMPLE }, util) {
-      return this._sound([`sample ${sym(SAMPLE)}, amp: ${this.amp}`], util);
+      const o = opts({ amp: this.amp, ...this.sampleOpts });
+      return this._sound([`sample ${sym(SAMPLE)}, ${o}`], util);
     }
     sleepBeats({ BEATS }, util) {
       const beats = num(BEATS, 1);
@@ -272,12 +294,25 @@
       this._stmt("use_synth_defaults", util);
     }
     useFx({ FX }) {
-      this.fx = String(FX);
-      this.fxOpts = {};
+      const name = String(FX);
+      this.fx = name === "none" ? [] : [{ name, opts: {} }];
     }
+    addFx({ FX }) {
+      const name = String(FX);
+      if (name !== "none") this.fx.push({ name, opts: {} });
+    }
+    // Options apply to the most recently chosen effect.
     setFxOpt({ OPT, VALUE }) {
       const k = sym(OPT).slice(1);
-      if (k !== "x") this.fxOpts[k] = num(VALUE, 0);
+      const f = this.fx[this.fx.length - 1];
+      if (f && k !== "x") f.opts[k] = num(VALUE, 0);
+    }
+    setSampleOpt({ OPT, VALUE }) {
+      const k = sym(OPT).slice(1);
+      if (k !== "x") this.sampleOpts[k] = num(VALUE, 0);
+    }
+    clearSampleOpts() {
+      this.sampleOpts = {};
     }
     setBpm({ BPM }, util) {
       this.bpm = Math.min(999, Math.max(1, num(BPM, 60)));
@@ -296,7 +331,7 @@
         // First time through: run the blocks inside once, recording instead of playing.
         frame.spLoop = { name: sym(name), sync: sync ? sym(sync) : null, lines: [] };
         util.thread.spLoop = frame.spLoop;
-        for (const l of this._settings()) frame.spLoop.lines.push({ fx: "", code: l });
+        for (const l of this._settings()) frame.spLoop.lines.push({ fx: this._fxHeads(), code: l });
         util.startBranch(1, true);
         return;
       }

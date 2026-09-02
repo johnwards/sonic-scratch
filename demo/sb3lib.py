@@ -75,20 +75,38 @@ class Target:
         return bid
 
     # ---- custom blocks ("My Blocks") ----
-    def define(self, name, x, y, body_ids):
-        """A `define <name>` hat with the given body. No arguments supported."""
+    def define(self, name, x, y, body_ids, args=()):
+        """A `define <name> (arg) (arg)` hat with the given body. Args are string/number inputs."""
+        arg_ids = [_id("a") for _ in args]
+        proto_inputs = {}
+        for aid, aname in zip(arg_ids, args):
+            sid = _id("s")
+            self.blocks[sid] = {"opcode": "argument_reporter_string_number", "next": None, "parent": None,
+                                "inputs": {}, "fields": {"VALUE": [aname, None]}, "shadow": True, "topLevel": False}
+            proto_inputs[aid] = [1, sid]
+        proccode = name + "".join(" %s" for _ in args)
         proto = _id("p")
-        self.blocks[proto] = {"opcode": "procedures_prototype", "next": None, "parent": None, "inputs": {},
+        self.blocks[proto] = {"opcode": "procedures_prototype", "next": None, "parent": None, "inputs": proto_inputs,
                               "fields": {}, "shadow": True, "topLevel": False,
-                              "mutation": {"tagName": "mutation", "children": [], "proccode": name,
-                                           "argumentids": "[]", "argumentnames": "[]", "argumentdefaults": "[]",
-                                           "warp": "false"}}
+                              "mutation": {"tagName": "mutation", "children": [], "proccode": proccode,
+                                           "argumentids": json.dumps(arg_ids), "argumentnames": json.dumps(list(args)),
+                                           "argumentdefaults": json.dumps([""] * len(args)), "warp": "false"}}
         head = self.block("procedures_definition", {"custom_block": [1, proto]})
         self.script(x, y, [head] + body_ids)
+        if not hasattr(self, "procs"):
+            self.procs = {}
+        self.procs[name] = (proccode, arg_ids)
         return head
 
-    def call(self, name):
-        return self.block("procedures_call", {}, {}, mutation={"proccode": name, "argumentids": "[]", "warp": "false"})
+    def call(self, name, *values):
+        """Call a custom block. Values are input specs (txt(), num(), a reporter, ...)."""
+        proccode, arg_ids = getattr(self, "procs", {}).get(name, (name, []))
+        return self.block("procedures_call", dict(zip(arg_ids, values)), {},
+                          mutation={"proccode": proccode, "argumentids": json.dumps(arg_ids), "warp": "false"})
+
+    def arg(self, name):
+        """Use a custom block's argument inside its definition."""
+        return self.reporter("argument_reporter_string_number", {}, {"VALUE": [name, None]}, shadow=(10, ""))
 
     def reporter(self, opcode, inputs=None, fields=None, shadow=(4, "0")):
         """A reporter/boolean block in an input slot. Returns the input spec."""
