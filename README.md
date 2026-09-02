@@ -54,6 +54,12 @@ Sounds:
 - `play chord [c4] [major]`
 - `play sample [drum_heavy_kick]`
 - `sleep [1] beats`
+- `play recording [sound] at note [60]`: plays a sound from the sprite's Sounds tab, including
+  ones recorded with the Record button. 60 is the original pitch; other notes shift it like a
+  sampler, so a spoken word can be played as a melody. Works inside live loops.
+- `start microphone (through the effects)`, `stop microphone`: live microphone input through
+  whatever effects are set, e.g. `use effect vowel` for a robot voice. Use headphones or the
+  speakers will feed back. The first time, the computer asks for microphone permission.
 
 Settings, applied to later sounds:
 
@@ -112,7 +118,7 @@ machine, so it is not quarantined as a download.
 
 - `bridge.rb`: the bridge. To run by hand on a Mac:
   `"/Applications/Sonic Pi.app/Contents/Resources/app/server/native/ruby/bin/ruby" bridge.rb`.
-  Env: `PORT`, `NO_OPEN=1`, `DEBUG=1`.
+  Env: `PORT`, `NO_OPEN=1`, `DEBUG=1`, `NO_MIC=1` (boot without audio input).
 - `sonic-pi-blocks.js`: the extension
 - `bin/sonic-scratch.command`, `bin/sonic-scratch.cmd`: launchers
 - `install.sh`, `install.ps1`: installers

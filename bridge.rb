@@ -88,6 +88,20 @@ def open_browser(url)
 rescue StandardError
 end
 
+# The engine boots with inputs off until asked (macOS asks for microphone permission the
+# first time). The Sonic Pi app sends this over the engine's TCP port; so do we.
+def enable_microphone
+  Thread.new do
+    begin
+      engine = SonicPi::OSC::TcpOscClient.new("127.0.0.1", $ports[:scsynth], name: "scratch-bridge-engine", connect_timeout: 10)
+      engine.send(nil, nil, "/supersonic/inputs/enable", 1)
+      log "Microphone input requested (allow it if your computer asks)."
+    rescue StandardError => e
+      log "Couldn't enable the microphone: #{e.message}"
+    end
+  end
+end
+
 def print_instructions
   log <<~TXT
 
@@ -105,7 +119,11 @@ end
 log "Booting Sonic Pi from #{SERVER} ..."
 # Host gem settings would make the bundled Ruby look in the wrong place.
 daemon_env = { "GEM_PATH" => nil, "GEM_HOME" => nil }
-daemon_in, daemon_out, daemon_thr = Open3.popen2e(daemon_env, SonicPi::Paths.ruby_path, SonicPi::Paths.daemon_path, "--no-scsynth-inputs")
+# Audio inputs are on so the "start microphone" block works. NO_MIC=1 turns them off
+# (and avoids the microphone permission prompt).
+daemon_args = [SonicPi::Paths.ruby_path, SonicPi::Paths.daemon_path]
+daemon_args << "--no-scsynth-inputs" if ENV["NO_MIC"]
+daemon_in, daemon_out, daemon_thr = Open3.popen2e(daemon_env, *daemon_args)
 
 first_line = daemon_out.gets
 nums = first_line.to_s.split.map { |s| Integer(s, exception: false) }
@@ -148,6 +166,7 @@ from_spider.add_method("/ack") do |_|
     $state[:ready] = true
     log "Sonic Pi is ready. Open Scratch and make some noise!"
     $to_spider.send("/mixer-output-volume", $token, 0.6, 1)
+    enable_microphone unless ENV["NO_MIC"]
     print_instructions
     open_browser(EDITOR_URL)
   end
@@ -217,6 +236,29 @@ def handle(sock)
     headers[k.downcase] = v.strip if v
   end
   body = headers["content-length"] ? sock.read(headers["content-length"].to_i) : ""
+
+  if method == "POST" && (m = path.match(%r{\A/sample/([a-f0-9]{32})\.(wav|aiff|aif|flac|mp3)\z}))
+    # A sound from the Scratch project (its md5 is the name). Saved once, then Sonic Pi can
+    # play it with `sample "path"`.
+    dir = File.join(SonicPi::Paths.home_dir_path, "scratch-samples")
+    Dir.mkdir(dir) unless Dir.exist?(dir)
+    file = File.join(dir, "#{m[1]}.#{m[2]}")
+    File.binwrite(file, body) unless File.exist?(file) && File.size(file) == body.bytesize
+    if m[2] == "mp3"
+      # Sonic Pi can't read MP3; convert if ffmpeg is around.
+      wav = file.sub(/\.mp3\z/, ".wav")
+      unless File.exist?(wav)
+        unless system("ffmpeg", "-v", "error", "-y", "-i", file, wav)
+          respond(sock, "415 Unsupported Media Type", "application/json", '{"error":"MP3 sounds need ffmpeg installed; record or import a WAV instead"}')
+          return
+        end
+      end
+      file = wav
+    end
+    run_code(%(load_sample #{file.inspect}))
+    respond(sock, "200 OK", "application/json", JSON.generate(path: file))
+    return
+  end
 
   case [method, path]
   when ["OPTIONS", path]

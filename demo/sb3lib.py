@@ -47,6 +47,7 @@ class Target:
         self.variables = {}
         self.lists = {}
         self.costumes = []
+        self.sounds = []
         self.assets = []
         self.x = 0
         self.y = 0
@@ -163,6 +164,17 @@ class Target:
                               "md5ext": f"{md5}.png", "rotationCenterX": cx, "rotationCenterY": cy})
         self.assets.append((f"{md5}.png", data))
 
+    def sound(self, name, wav_bytes):
+        """A WAV sound on this sprite, as the Sounds tab would store a recording."""
+        import struct
+        md5 = hashlib.md5(wav_bytes).hexdigest()
+        ch, sr = struct.unpack("<HI", wav_bytes[22:28])
+        data_len = len(wav_bytes) - 44
+        bits = struct.unpack("<H", wav_bytes[34:36])[0]
+        self.sounds.append({"name": name, "assetId": md5, "dataFormat": "wav", "format": "", "rate": sr,
+                            "sampleCount": data_len // (ch * bits // 8), "md5ext": f"{md5}.wav"})
+        self.assets.append((f"{md5}.wav", wav_bytes))
+
     # ---- output ----
     def _fix_parents(self):
         for bid, b in self.blocks.items():
@@ -175,7 +187,7 @@ class Target:
         self._fix_parents()
         common = {"isStage": self.is_stage, "name": self.name, "variables": self.variables, "lists": self.lists,
                   "broadcasts": {}, "blocks": self.blocks, "comments": self.comments, "currentCostume": 0,
-                  "costumes": self.costumes, "sounds": [], "volume": 100, "layerOrder": self.layer}
+                  "costumes": self.costumes, "sounds": self.sounds, "volume": 100, "layerOrder": self.layer}
         if self.is_stage:
             common.update({"tempo": 60, "videoTransparency": 50, "videoState": "off", "textToSpeechLanguage": None})
         else:

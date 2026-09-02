@@ -59,6 +59,7 @@
       this.cueSeen = {};    // per hat block: count it last fired at
       this.lastCue = "";
       this.eventSeq = -1;   // -1 asks the bridge for the current position without replaying
+      this.uploads = {};    // sound md5 -> promise of its file path on the bridge
       this.quietUntil = 0;  // ignore cues briefly after a stop; Sonic Pi takes a moment to go quiet
       this._poll();
       this._pollEvents();
@@ -125,6 +126,10 @@
             arguments: { SAMPLE: menu("samples") } },
           { opcode: "sleepBeats", blockType: Scratch.BlockType.COMMAND, text: "sleep [BEATS] beats",
             arguments: { BEATS: n(1) } },
+          { opcode: "playRecording", blockType: Scratch.BlockType.COMMAND, text: "play recording [SOUND] at note [NOTE]",
+            arguments: { SOUND: menu("sounds"), NOTE: { type: Scratch.ArgumentType.NOTE, defaultValue: 60 } } },
+          { opcode: "micStart", blockType: Scratch.BlockType.COMMAND, text: "start microphone (through the effects)" },
+          { opcode: "micStop", blockType: Scratch.BlockType.COMMAND, text: "stop microphone" },
           "---",
           { opcode: "useSynth", blockType: Scratch.BlockType.COMMAND, text: "use synth [SYNTH]", arguments: { SYNTH: menu("synths") } },
           { opcode: "setSoundOpt", blockType: Scratch.BlockType.COMMAND, text: "set sound option [OPT] to [VALUE]",
@@ -165,6 +170,7 @@
           { opcode: "lastError", blockType: Scratch.BlockType.REPORTER, text: "last error from Sonic Pi" },
         ],
         menus: {
+          sounds: { acceptReporters: true, items: "_soundsMenu" },
           synths: { acceptReporters: true, items: SYNTHS },
           samples: { acceptReporters: true, items: SAMPLES },
           fx: { acceptReporters: true, items: FX },
@@ -275,6 +281,60 @@
       const beats = num(BEATS, 1);
       if (this._rec(util)) { this._stmt(`sleep ${beats}`, util); return; }
       return this._wait(beats);
+    }
+
+    // ---- recordings from the Sounds tab ----
+    _soundsMenu() {
+      const vm = Scratch.vm;
+      const target = vm && vm.runtime.getEditingTarget();
+      const names = target ? target.sprite.sounds.map((snd) => snd.name) : [];
+      return names.length ? names : ["(record a sound in the Sounds tab)"];
+    }
+    _findSound(name, util) {
+      const targets = [util.target, ...(Scratch.vm ? Scratch.vm.runtime.targets : [])];
+      for (const t of targets) {
+        const snd = t && t.sprite.sounds.find((x) => x.name === name);
+        if (snd) return snd;
+      }
+      return null;
+    }
+    // Send the sound's bytes to the bridge once; it saves them where Sonic Pi can read them.
+    _uploadSound(snd) {
+      const md5 = snd.assetId;
+      if (!this.uploads[md5]) {
+        const data = snd.asset && snd.asset.data;
+        if (!data) return Promise.reject(new Error("sound data not loaded"));
+        const ext = (snd.dataFormat || "wav").toLowerCase();
+        this.uploads[md5] = fetch(`${BRIDGE}/sample/${md5}.${ext}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: data,
+        }).then(async (r) => {
+          const j = await r.json();
+          if (!r.ok) throw new Error(j.error || "upload failed");
+          return j.path;
+        }).catch((e) => { delete this.uploads[md5]; throw e; });
+      }
+      return this.uploads[md5];
+    }
+    playRecording({ SOUND, NOTE }, util) {
+      const snd = this._findSound(String(SOUND), util);
+      if (!snd) return;
+      const semis = toMidi(NOTE) - 60;   // 60 plays the recording as it was made
+      const rec = this._rec(util);
+      return this._uploadSound(snd).then((path) => {
+        const line = `sample ${JSON.stringify(path)}, amp: ${this.amp}${semis ? `, rpitch: ${semis}` : ""}`;
+        // Recording finished while we waited? Then the loop has already been sent; play it now.
+        return this._sound([line], rec && util.thread.spLoop === rec ? util : null);
+      }).catch((e) => { this.status.lastError = e.message; });
+    }
+    micStart(_, util) {
+      const line = `live_audio :scratch_mic, amp: ${this.amp}`;
+      if (this._rec(util)) { this._stmt(line, util); return; }
+      return this._send([...this._settings(), ...this._wrapFx([line])].join("\n"));
+    }
+    micStop() {
+      return this._send("live_audio :scratch_mic, :stop");
     }
 
     // ---- settings ----
