@@ -222,11 +222,13 @@ def note_arg(spec):
 
 # Drums: a thumpy kick under a clicky one; bright hats; snare with a clap on top.
 t.define("kick hit", 2500, 40, [
-    loud(2.2), sp("clearSampleOpts"), sample_opt("lpf", 95), sample("bd_haus"),
-    loud(1.0), sp("clearSampleOpts"), sample_opt("rate", 0.9), sample_opt("hpf", 40), sample("bd_tek"),
+    loud(2.0), sp("clearSampleOpts"), sample_opt("rate", 1.05), sample("bd_zum"),
+    synth("sine"), sound_opt("attack", 0.001), sound_opt("release", 0.28), loud(1.6), sp("playNote", NOTE=t.note("a2")),
+    loud(1.1), sp("clearSampleOpts"), sample_opt("rate", 1.3), sample_opt("lpf", 100), sample("bd_haus"),
+    loud(0.9), sp("clearSampleOpts"), sample_opt("rate", 1.2), sample_opt("hpf", 60), sample("bd_tek"),
 ])
 t.define("hat hit", 2500, 400, [
-    loud(1.8), sp("clearSampleOpts"), sample_opt("rate", 1.4), sample_opt("hpf", 90), sample("drum_cymbal_closed"),
+    loud(2.2), sp("clearSampleOpts"), sample_opt("rate", 1.4), sample_opt("hpf", 90), sample("drum_cymbal_closed"),
 ])
 t.define("ghost hat", 2500, 640, [
     loud(0.5), sp("clearSampleOpts"), sample_opt("rate", 1.4), sample_opt("hpf", 90), sample("drum_cymbal_closed"),
@@ -235,39 +237,43 @@ t.define("open hat hit", 2500, 880, [
     loud(0.8), sp("clearSampleOpts"), sample_opt("rate", 1.25), sample_opt("finish", 0.2), sample_opt("hpf", 90), sample("drum_cymbal_open"),
 ])
 t.define("clap hit", 2500, 1160, [
-    loud(1.4), sp("clearSampleOpts"), sample_opt("rate", 1.05), sample("drum_snare_soft"),
+    loud(0.9), sp("clearSampleOpts"), sample_opt("rate", 1.1), sample("drum_snare_soft"),
     loud(1.6), sp("clearSampleOpts"), sample_opt("rate", 1.1), sample("perc_snap"),
 ])
 
-# Bass note: a pure sine for weight plus a filtered saw for tone.
+# Bass note (MIDI numbers): sine for weight, a louder filtered saw for tone, and a quiet
+# triangle an octave up for the harmonics the record has around 110-165 Hz.
 t.define("bass note", 3100, 40, [
-    synth("sine"), sound_opt("attack", 0.005), sound_opt("release", times(t.arg("beats"), 0.85)), loud(1.6),
+    synth("sine"), sound_opt("attack", 0.005), sound_opt("release", times(t.arg("beats"), 0.85)), loud(0.7),
     sp("playNote", NOTE=note_arg(t.arg("note"))),
-    synth("saw"), sound_opt("attack", 0.005), sound_opt("cutoff", 100), sound_opt("res", 0.25), loud(1.0),
-    sp("playNoteFor", NOTE=note_arg(t.arg("note")), BEATS=t.arg("beats")),
+    synth("saw"), sound_opt("attack", 0.005), sound_opt("cutoff", 92), sound_opt("res", 0.3),
+    sound_opt("release", times(t.arg("beats"), 0.8)), loud(1.7),
+    sp("playNote", NOTE=note_arg(t.arg("note"))),
+    synth("tri"), sound_opt("attack", 0.005), sound_opt("cutoff", 100), loud(1.0),
+    sp("playNoteFor", NOTE=note_arg(plus(t.arg("note"), 12)), BEATS=t.arg("beats")),
 ], args=("note", "beats"))
 
 # Chord note (MIDI numbers): pluck, pluck an octave down, and a wide prophet pad on top.
 t.define("chord note", 3100, 500, [
-    synth("pluck"), loud(2.8), sp("playNote", NOTE=note_arg(t.arg("note"))),
-    synth("prophet"), sound_opt("cutoff", 126), sound_opt("detune", 0.25), sound_opt("release", times(t.arg("beats"), 0.9)), loud(0.9),
+    synth("pluck"), loud(2.0), sp("playNote", NOTE=note_arg(t.arg("note"))),
+    synth("prophet"), sound_opt("cutoff", 126), sound_opt("detune", 0.25), sound_opt("release", times(t.arg("beats"), 0.9)), loud(0.3),
     sp("playNote", NOTE=note_arg(t.arg("note"))),
-    synth("pluck"), loud(1.0),
+    synth("pluck"), loud(0.3),
     sp("playNoteFor", NOTE=note_arg(minus(t.arg("note"), 12)), BEATS=t.arg("beats")),
 ], args=("note", "beats"))
 
 # Lead note: blade plus a detuned dsaw.
 t.define("lead note", 3100, 960, [
-    synth("blade"), sound_opt("cutoff", 130), sound_opt("release", times(t.arg("beats"), 0.9)), loud(1.1),
+    synth("blade"), sound_opt("cutoff", 130), sound_opt("release", times(t.arg("beats"), 0.9)), loud(0.45),
     sp("playNote", NOTE=note_arg(t.arg("note"))),
-    synth("dsaw"), sound_opt("cutoff", 126), sound_opt("detune", 0.2), loud(0.55),
+    synth("dsaw"), sound_opt("cutoff", 126), sound_opt("detune", 0.2), loud(0.2),
     sp("playNoteFor", NOTE=note_arg(t.arg("note")), BEATS=t.arg("beats")),
 ], args=("note", "beats"))
 
 # Sung note (MIDI numbers): the vowel filter changes shape per syllable; quiet octave on top.
 t.define("sing", 3100, 1420, [
     fx_opt("vowel_sound", t.arg("vowel")),
-    synth("dsaw"), sound_opt("detune", 0.15), sound_opt("release", times(t.arg("beats"), 0.9)), loud(0.45),
+    synth("dsaw"), sound_opt("detune", 0.15), sound_opt("release", times(t.arg("beats"), 0.9)), loud(0.28),
     sp("playNote", NOTE=note_arg(t.arg("note"))),
     loud(0.15),
     sp("playNoteFor", NOTE=note_arg(plus(t.arg("note"), 12)), BEATS=t.arg("beats")),
@@ -275,8 +281,11 @@ t.define("sing", 3100, 1420, [
 
 
 # ============================================================ the parts
+MIDI = {"g1": 31, "a1": 33, "b1": 35, "c2": 36, "d2": 38, "e2": 40, "fs2": 42}
+
+
 def bass_note(n, beats):
-    return t.call("bass note", txt(n), num(beats))
+    return t.call("bass note", num(MIDI[n]), num(beats))
 
 
 def lead_note(n, beats):
@@ -317,7 +326,8 @@ t.define("lead", 700, 700, [
 # Roots land a sixteenth early, rest, three more, two-note pickup; then the walk-down.
 t.define("bass", 1300, 40, [
     fx("compressor"), fx_opt("threshold", 0.35), fx_opt("slope_above", 0.4),
-    also_fx("lpf"), fx_opt("cutoff", 118),
+    also_fx("lpf"), fx_opt("cutoff", 112),
+    also_fx("hpf"), fx_opt("cutoff", 30),
     live_loop("bass", [
         rest(1), bass_note("a1", 1), bass_note("a1", 1), bass_note("a1", 0.5), bass_note("b1", 0.25), bass_note("c2", 0.25),
         rest(1), bass_note("c2", 1), bass_note("c2", 1), bass_note("c2", 0.5), bass_note("d2", 0.25), bass_note("e2", 0.25),
@@ -333,7 +343,7 @@ VOX = [(59, 0.5), (55, 1), (55, 0.5), (54, 0.5), (55, 1), (57, 0.5), (57, 0.5), 
 VOWELS = [1, 5, 2, 4]
 t.define("voice", 1300, 900, [
     fx("reverb"), fx_opt("room", 0.5), fx_opt("mix", 0.2),
-    also_fx("hpf"), fx_opt("cutoff", 55),
+    also_fx("hpf"), fx_opt("cutoff", 68),
     also_fx("vowel"), fx_opt("voice", 3), fx_opt("mix", 0.85),
     live_loop("voice", [sing(n, d, VOWELS[i % 4]) for i, (n, d) in enumerate(VOX)], sync="bass"),
     part_done("voice"),
